@@ -27,13 +27,14 @@ toolchain="gcc_linaro_gnueabihf_4_7"
 #Kernel/Build
 KERNEL_REL=3.8
 KERNEL_TAG=${KERNEL_REL}.13
-BUILD=bone68
+BUILD=bone68b
 
 #v3.X-rcX + upto SHA
 #KERNEL_SHA=""
 
 #git branch
-BRANCH="am33x-v3.8"
+#BRANCH="am33x-v3.8"
+BRANCH="3.8.13-bone68"
 
 DISTRO=cross
 DEBARCH=armhf
