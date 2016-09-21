@@ -1,0 +1,195 @@
+diff --git a/drivers/input/touchscreen/ti_am335x_tsc.c b/drivers/input/touchscreen/ti_am335x_tsc.c
+index 310045c..5813424 100644
+--- a/drivers/input/touchscreen/ti_am335x_tsc.c
++++ b/drivers/input/touchscreen/ti_am335x_tsc.c
+@@ -27,6 +27,7 @@
+ #include <linux/delay.h>
+ #include <linux/of.h>
+ #include <linux/of_device.h>
++#include <linux/sysfs.h>
+ 
+ #include <linux/mfd/ti_am335x_tscadc.h>
+ 
+@@ -54,6 +55,97 @@ struct titsc {
+ 	u32			inp_xp, inp_xn, inp_yp, inp_yn;
+ 	unsigned int 		prevZ;
+ 	unsigned int 		down_count;
++	unsigned int 		down_threshold;
++    unsigned int        down_ignore;
++    unsigned int        down_report;
++};
++
++static ssize_t show_titsc_down_ignore(struct device *dev, struct device_attribute *attr, char *buf)
++{
++	struct titsc *ts_dev = dev_get_drvdata(dev);
++
++	return snprintf(buf, PAGE_SIZE, "%u\n", ts_dev->down_ignore);
++}
++
++static ssize_t show_titsc_down_report(struct device *dev, struct device_attribute *attr, char *buf)
++{
++	struct titsc *ts_dev = dev_get_drvdata(dev);
++
++	return snprintf(buf, PAGE_SIZE, "%u\n", ts_dev->down_report);
++}
++
++static ssize_t show_titsc_prev_z(struct device *dev, struct device_attribute *attr, char *buf)
++{
++	struct titsc *ts_dev = dev_get_drvdata(dev);
++
++	return snprintf(buf, PAGE_SIZE, "%u\n", ts_dev->prevZ);
++}
++
++static ssize_t show_titsc_x_plate_resistance(struct device *dev, struct device_attribute *attr, char *buf)
++{
++	struct titsc *ts_dev = dev_get_drvdata(dev);
++
++	return snprintf(buf, PAGE_SIZE, "%u\n", ts_dev->x_plate_resistance);
++}
++
++static ssize_t set_titsc_x_plate_resistance(struct device *dev, struct device_attribute *attr,
++                                     const char *buf, size_t count)
++{
++	struct titsc *ts_dev = dev_get_drvdata(dev);
++	long val;
++
++	if (strict_strtoul(buf, 0, &val))
++		return -EINVAL;
++
++    ts_dev->x_plate_resistance = val;
++
++	return count;
++}
++
++static ssize_t show_titsc_down_threshold(struct device *dev, struct device_attribute *attr, char *buf)
++{
++	struct titsc *ts_dev = dev_get_drvdata(dev);
++
++	return snprintf(buf, PAGE_SIZE, "%u\n", ts_dev->down_threshold);
++}
++
++static ssize_t set_titsc_down_threshold(struct device *dev, struct device_attribute *attr,
++                                     const char *buf, size_t count)
++{
++	struct titsc *ts_dev = dev_get_drvdata(dev);
++	long val;
++
++	if (strict_strtoul(buf, 0, &val))
++		return -EINVAL;
++
++    ts_dev->down_threshold = val;
++
++	return count;
++}
++
++static DEVICE_ATTR(down_ignore, S_IRUGO,
++                   show_titsc_down_ignore, NULL);
++static DEVICE_ATTR(down_report, S_IRUGO,
++                   show_titsc_down_report, NULL);
++static DEVICE_ATTR(prev_z, S_IRUGO,
++                   show_titsc_prev_z, NULL);
++static DEVICE_ATTR(x_plate_resistance, S_IRUGO | S_IWUGO,
++                   show_titsc_x_plate_resistance, set_titsc_x_plate_resistance);
++static DEVICE_ATTR(down_threshold, S_IRUGO | S_IWUGO,
++                   show_titsc_down_threshold, set_titsc_down_threshold);
++
++static struct attribute *titsc_sysfs_entries[] = {
++	&dev_attr_down_ignore.attr,
++	&dev_attr_down_report.attr,
++	&dev_attr_prev_z.attr,
++	&dev_attr_x_plate_resistance.attr,
++	&dev_attr_down_threshold.attr,
++	NULL,
++};
++
++static struct attribute_group titsc_attr_group = {
++	.name   = NULL,
++	.attrs  = titsc_sysfs_entries,
+ };
+ 
+ static unsigned int titsc_readl(struct titsc *ts, unsigned int reg)
+@@ -295,12 +387,19 @@ static irqreturn_t titsc_irq(int irq, void *dev)
+ 			ts_dev->prevZ=z;
+ 			pr_debug("x %d y %d z %d deltaZ %d count %d\n", x, y, z, deltaZ, ts_dev->down_count);
+ 
+-			if (z <= MAX_12BIT && deltaZ>=0  && deltaZ<=10 && ts_dev->down_count > 3) {
+-				input_report_abs(input_dev, ABS_X, x);
+-				input_report_abs(input_dev, ABS_Y, y);
+-				input_report_abs(input_dev, ABS_PRESSURE, z);
+-				input_report_key(input_dev, BTN_TOUCH, 1);
+-				input_sync(input_dev);
++			if (z <= MAX_12BIT && deltaZ>=0  && deltaZ<=100) {
++                if (ts_dev->down_count > ts_dev->down_threshold) {
++                    input_report_abs(input_dev, ABS_X, x);
++                    input_report_abs(input_dev, ABS_Y, y);
++                    input_report_abs(input_dev, ABS_PRESSURE, z);
++                    input_report_key(input_dev, BTN_TOUCH, 1);
++                    input_sync(input_dev);
++
++                    ts_dev->down_report++;
++                }
++                else {
++                    ts_dev->down_ignore++;
++                }
+ 			}
+ 		}
+ 		irqclr |= IRQENB_FIFO0THRES;
+@@ -378,6 +477,7 @@ static int titsc_parse_dt(struct ti_tscadc_dev *tscadc_dev,
+ 			ts_dev->config_inp, ARRAY_SIZE(ts_dev->config_inp));
+ }
+ 
++#if 0
+ static int titsc_parse_pdata(struct ti_tscadc_dev *tscadc_dev,
+ 					struct titsc *ts_dev)
+ {
+@@ -395,6 +495,7 @@ static int titsc_parse_pdata(struct ti_tscadc_dev *tscadc_dev,
+ 		sizeof(pdata->tsc_init->wire_config));
+ 	return 0;
+ }
++#endif
+ 
+ /*
+  * The functions for inserting/removing driver as a module.
+@@ -444,6 +545,12 @@ static int titsc_probe(struct platform_device *pdev)
+ 	titsc_writel(ts_dev, REG_FIFO0THR,
+ 			ts_dev->coordinate_readouts * 2 + 2 - 1);
+ 
++    err = sysfs_create_group(&pdev->dev.kobj, &titsc_attr_group);
++	if (err) {
++		dev_err(&pdev->dev, "unable to create sysfs group\n");
++		goto err_free_irq;
++	}
++	
+ 	input_dev->name = "ti-tsc";
+ 	input_dev->dev.parent = &pdev->dev;
+ 
+@@ -457,14 +564,19 @@ static int titsc_probe(struct platform_device *pdev)
+ 	/*init prev Z*/
+ 	ts_dev->prevZ=0;
+ 
++	/*init down threshold*/
++	ts_dev->down_threshold=3;
++
+ 	/* register to the input system */
+ 	err = input_register_device(input_dev);
+ 	if (err)
+-		goto err_free_irq;
++		goto err_sysfs;
+ 
+ 	platform_set_drvdata(pdev, ts_dev);
+ 	return 0;
+ 
++err_sysfs:
++	sysfs_remove_group(&pdev->dev.kobj, &titsc_attr_group);
+ err_free_irq:
+ 	free_irq(ts_dev->irq, ts_dev);
+ err_free_mem:
+@@ -478,6 +590,8 @@ static int titsc_remove(struct platform_device *pdev)
+ 	struct titsc *ts_dev = platform_get_drvdata(pdev);
+ 	u32 steps;
+ 
++	sysfs_remove_group(&pdev->dev.kobj, &titsc_attr_group);
++
+ 	free_irq(ts_dev->irq, ts_dev);
+ 
+ 	/* total steps followed by the enable mask */
